@@ -23,7 +23,9 @@ function readGeoSceneFile(filePath, callback) {
     if(rawFile.readyState === 4) {
       if(rawFile.status === 200 || rawFile.status == 0) {
         var content = rawFile.responseText;
-        var geoCastObj = parseGeoSceneContent(content);
+        // Get basepath for geoscene data
+        var basepath = filePath.replace(/\/[^\/\n]*$|\\+[^\\\n]*$/, '');
+        var geoCastObj = parseGeoSceneContent(content, basepath);
         callback(geoCastObj);
       }
     }
@@ -31,7 +33,7 @@ function readGeoSceneFile(filePath, callback) {
   rawFile.send();
 }
 
-// [utility function] Skip comment and empty lines
+// <[utility functions]>
 function skipCommentAndEmptyLines(arrayOfLines, index) {
   if(index >= arrayOfLines.length)
     return index; // No-op
@@ -40,6 +42,12 @@ function skipCommentAndEmptyLines(arrayOfLines, index) {
     ++index;
   return index;
 };
+function degToRad(degrees) {
+  return degrees * Math.PI / 180;
+}
+function radToDeg(radians) {
+  return radians / Math.PI * 180;
+}
 
 /**
  * Reads a GeoScene text file on the local webserver via AJAX and returns a GeoScene object
@@ -54,7 +62,7 @@ function skipCommentAndEmptyLines(arrayOfLines, index) {
  *         name = "Field0";
  *         size = [1400, 900];
  *         image = "../image.png";
- *         geocast = "../geocast_file.geocast";
+ *         geocast = [geocastObject - see see parseGeoCastContent()];
  *       }, ...
  *     ]
  *     geoCastZSequence = [
@@ -62,7 +70,7 @@ function skipCommentAndEmptyLines(arrayOfLines, index) {
  *         name = "WorldFloor";
  *         size = [1400, 900];
  *         image = "../image.png";
- *         geocast = "../geocast_file.geocast";
+ *         geocast = [geocastObject - see see parseGeoCastContent()];
  *       }, ...
  *     ]
  *     matchGroupSequence = [
@@ -79,9 +87,10 @@ function skipCommentAndEmptyLines(arrayOfLines, index) {
  *   }
  *
  * @param {content} The string content of the GeoScene file
+ * @param {basepath} Basepath to use when loading relative geocast files and images
  * @return {object} The GeoScene object
  */
-function parseGeoSceneContent(content) {
+function parseGeoSceneContent(content, basepath) {
   var output = {};
   var arrayOfLines = content.split("\n");
   var i = 0;
@@ -91,7 +100,7 @@ function parseGeoSceneContent(content) {
   var patt = /GeoScene V(\d+\.\d+)/g;
   var res = patt.exec(arrayOfLines[i++].trim());
   if (!res) {
-    alert("Not a GeoScene file");
+    console.log("Not a GeoScene file");
     return;
   }
   output.version = res[1];
@@ -100,7 +109,7 @@ function parseGeoSceneContent(content) {
   i = skipCommentAndEmptyLines(arrayOfLines, i);
   var parts = arrayOfLines[i++].trim().split(' ');
   if (parts[0] != "Sequence") {
-    alert("Unrecognized sequence marker");
+    console.log("Unrecognized sequence marker");
     return;
   }
   output.sequence = [parseFloat(parts[1]), parseFloat(parts[2])];
@@ -109,13 +118,14 @@ function parseGeoSceneContent(content) {
   i = skipCommentAndEmptyLines(arrayOfLines, i);
   parts = arrayOfLines[i++].trim().split(' ');
   if (parts[0] != "DataFormat") {
-    alert("Unrecognized dataformat marker");
+    console.log("Unrecognized dataformat marker");
     return;
   }
   output.dataformat = parts[1];
 
   // GeoCast sequence
   output.geoCastSequence = [];
+  var objIndex = 0;
   do {
     i = skipCommentAndEmptyLines(arrayOfLines, i);
     if(i >= arrayOfLines.length)
@@ -128,13 +138,21 @@ function parseGeoSceneContent(content) {
     var geocastSequenceObj = {};
     geocastSequenceObj.name = parts[1];
     geocastSequenceObj.size = [parseFloat(parts[2]), parseFloat(parts[3])];
-    geocastSequenceObj.image = parts[4];
-    geocastSequenceObj.geocast = parts[5];
+    geocastSequenceObj.image = basepath + '/' + parts[4];    
     output.geoCastSequence.push(geocastSequenceObj);
+    var geocastLoadedCallback = (function(j) {
+      var index = j; // Closure capture
+      return function(geocastObject) {
+        output.geoCastSequence[index].geocast = geocastObject;
+      };
+    })(objIndex);
+    readGeoCastFile(basepath + '/' + parts[5], geocastLoadedCallback);
+    ++objIndex;
   } while(true);
 
   // GeoCastZ sequence
   output.geoCastZSequence = [];
+  objIndex = 0;
   do {
     i = skipCommentAndEmptyLines(arrayOfLines, i);
     if(i >= arrayOfLines.length)
@@ -147,9 +165,16 @@ function parseGeoSceneContent(content) {
     var geoCastZSequenceObj = {};
     geoCastZSequenceObj.name = parts[1];
     geoCastZSequenceObj.size = [parseFloat(parts[2]), parseFloat(parts[3])];
-    geoCastZSequenceObj.image = parts[4];
-    geoCastZSequenceObj.geocast = parts[5];
+    geoCastZSequenceObj.image = basepath + '/' + parts[4];
     output.geoCastZSequence.push(geoCastZSequenceObj);
+    var geocastLoadedCallback = (function(j) {
+      var index = j; // Closure capture
+      return function(geocastObject) {
+        output.geoCastZSequence[index].geocast = geocastObject;
+      };
+    })(objIndex);
+    readGeoCastFile(basepath + '/' + parts[5], geocastLoadedCallback);
+    ++objIndex;
   } while(true);
 
   // Match groups sequence
@@ -207,7 +232,7 @@ function parseGeoSceneContent(content) {
  *     var callback = function (output) {
  *        // do something with output..
  *     };
- *     var res = readGeoCastFile("mycamera.geocast", callback);
+ *     readGeoCastFile("mycamera.geocast", callback);
  */
 function readGeoCastFile(filePath, callback) {
   var rawFile = new XMLHttpRequest();  
@@ -229,28 +254,38 @@ function readGeoCastFile(filePath, callback) {
  * Parse the contents of a GeoCast file and returns a GeoCast object similar to the following
  *
  *  geoCastObject = {
- *    version = "1.5";
- *    cameraType = "DynamicCamera";
- *    cameraPosition = [1.2, 3.4, 0.22];
- *    viewSlice_FODAngle = 145.0;
- *    viewSlice_Size = 100.0;
+ *    Version = "1.5";
+ *    CameraType = "DynamicCamera";
+ *    CameraPosition = [1.2, 3.4, 0.22];
+ *    ViewSlice_FODAngle = 145.0;
+ *    ViewSlice_Size = 100.0;
  *    // Row-major
- *    modelviewMatrix; // mat4 object
+ *    ModelviewMatrix; // mat4 object
  *    ------ varying part -------
- *    dataProject = "Ortho";
- *    windowSize = [12.0, 43.2];
- *    projRange = [0.10, 200.0];
- *    orthoMatrix; // mat4 object
+ *    DataProject = "Ortho";
+ *    WindowSize = [12.0, 43.2];
+ *    ProjRange = [0.10, 200.0];
+ *    OrthoMatrix; // mat4 object
  *    ---------------------------
- *    dataProject = "Perspective";
+ *    DataProject = "Perspective";
  *    Fovy = 45.0; (degrees)
  *    Aspect = 1.0;
  *    ClipRange = [1.0, 200.0];
- *    perspMatrix; // mat4 object
+ *    PerspMatrix; // mat4 object
  *    --- end of varying part ---
- *    
- *    *optional* worldSpaceDepth = true;
  *    ZDataRange = [0.0, 100.0];
+ *    *optional* WorldSpaceDepth = true;
+ *    *optional* ImageWarp = {
+ *      aspect = 0.2;
+ *      k1 = 0.2;
+ *      k2 = 0.2;
+ *      k3 = 0.2;
+ *      p1 = 0.2;
+ *      p2 = 0.2;
+ *      centerX = 0.2;
+ *      centerY = 0.2;
+ *      focal = 0.2;
+ *    };
  *  }
  *
  * @param {content} The string content of the GeoCast file
@@ -267,54 +302,54 @@ function parseGeoCastContent(content) {
   var patt = /GeoCast V(\d+\.\d+)/g;
   var res = patt.exec(arrayOfLines[i++].trim());
   if (!res) {
-    alert("Not a GeoCast file");
+    console.log("Not a GeoCast file");
     return;
   }
-  output.version = res[1];
+  output.Version = res[1];
 
   var cameraType = arrayOfLines[i++].trim();
   if (cameraType != "DynamicCamera" && cameraType != "StaticCamera") {
-    alert("Unrecognized camera type");
+    console.log("Unrecognized camera type");
     return;
   }
-  output.cameraType = cameraType;
+  output.CameraType = cameraType;
 
   // Pos
   i = skipCommentAndEmptyLines(arrayOfLines, i);
   var parts = arrayOfLines[i++].trim().split(' ');
   if (parts[0] != "Pos") {
-    alert("Unrecognized camera position");
+    console.log("Unrecognized camera position");
     return;
   }
   var cameraPosition = [];
   cameraPosition.push(parseFloat(parts[1]));
   cameraPosition.push(parseFloat(parts[2]));
   cameraPosition.push(parseFloat(parts[3]));
-  output.cameraPosition = cameraPosition;
+  output.CameraPosition = cameraPosition;
 
   // ViewSlice
   i = skipCommentAndEmptyLines(arrayOfLines, i);
   parts = arrayOfLines[i++].trim().split(' ');
   if (parts[0] != "ViewSlice") {
-    alert("Unrecognized ViewSlice tag");
+    console.log("Unrecognized ViewSlice tag");
     return;
   }
-  output.viewSlice_FODAngle = parseFloat(parts[2]);
-  output.viewSlice_Size = parseFloat(parts[4]);
+  output.ViewSlice_FODAngle = parseFloat(parts[2]);
+  output.ViewSlice_Size = parseFloat(parts[4]);
 
   // ModelviewMatrix
   i = skipCommentAndEmptyLines(arrayOfLines, i);
   if (arrayOfLines[i++].trim() != "ModelviewMatrix") {
-    alert("Unrecognized MVM type");
+    console.log("Unrecognized MVM type");
     return;
   }
-  output.modelviewMatrix = mat4.create();
+  output.ModelviewMatrix = mat4.create();
   var readMatrixRow = function(line, index) {
     parts = line.trim().split(' ');
-    output.modelviewMatrix[4 * index + 0] = parseFloat(parts[0]);
-    output.modelviewMatrix[4 * index + 1] = parseFloat(parts[1]);
-    output.modelviewMatrix[4 * index + 2] = parseFloat(parts[2]);
-    output.modelviewMatrix[4 * index + 3] = parseFloat(parts[3]);
+    output.ModelviewMatrix[4 * index + 0] = parseFloat(parts[0]);
+    output.ModelviewMatrix[4 * index + 1] = parseFloat(parts[1]);
+    output.ModelviewMatrix[4 * index + 2] = parseFloat(parts[2]);
+    output.ModelviewMatrix[4 * index + 3] = parseFloat(parts[3]);
   };
   for (var j = 0; j < 4; j++) {
     readMatrixRow(arrayOfLines[i++], j);
@@ -324,66 +359,92 @@ function parseGeoCastContent(content) {
   i = skipCommentAndEmptyLines(arrayOfLines, i);
   parts = arrayOfLines[i++].trim().split(' ');
   if (parts[0] != "DataProject") {
-    alert("Unrecognized DataProject tag");
+    console.log("Unrecognized DataProject tag");
     return;
   }
-  output.dataProject = parts[1];
-  if (output.dataProject == "Ortho") { // Orthographic view
-    if (parts[2] != "WindowSize") {
-      alert("Unrecognized WindowSize tag");
+  output.DataProject = parts[1];
+  if (output.DataProject == "Ortho") { // Orthographic view
+    if (parts[2] != "Window") {
+      console.log("Unrecognized Window tag");
       return;
     }
-    output.windowSize = [parseFloat(parts[3]), parseFloat(parts[4])];
+    output.WindowSize = [parseFloat(parts[3]), parseFloat(parts[4])];
     if (parts[5] != "ProjRange") {
-      alert("Unrecognized ProjRange tag");
+      console.log("Unrecognized ProjRange tag");
       return;
     }
-    output.projRange = [parseFloat(parts[6]), parseFloat(parts[7])];
-    output.orthoMatrix = mat4.create();
-    mat4.ortho(output.orthoMatrix,
-        -output.windowSize[0], output.windowSize[0], 
-        -output.windowSize[1], output.windowSize[1],
-        output.projRange[0], output.projRange[1]);
-  } else if (output.dataProject == "Perspective") { // Perspective view
+    output.ProjRange = [parseFloat(parts[6]), parseFloat(parts[7])];
+    output.OrthoMatrix = mat4.create();
+    mat4.ortho(output.OrthoMatrix,
+        -output.WindowSize[0], output.WindowSize[0], 
+        -output.WindowSize[1], output.WindowSize[1],
+        output.ProjRange[0], output.ProjRange[1]);
+  } else if (output.DataProject == "Perspective") { // Perspective view
     if (parts[2] != "Fovy") {
-      alert("Unrecognized Fovy tag");
+      console.log("Unrecognized Fovy tag");
       return;
     }
     output.Fovy = parseFloat(parts[3]);
     if (parts[4] != "Aspect") {
-      alert("Unrecognized Aspect tag");
+      console.log("Unrecognized Aspect tag");
       return;
     }
     output.Aspect = parseFloat(parts[5]);
     if (parts[6] != "ClipRange") {
-      alert("Unrecognized ClipRange tag");
+      console.log("Unrecognized ClipRange tag");
       return;
     }    
     output.ClipRange = [parseFloat(parts[7]), parseFloat(parts[8])];
-    output.perspMatrix = mat4.create();
-    mat4.perspective(output.perspMatrix, degToRad(output.Fovy), output.Aspect, 
+    output.PerspMatrix = mat4.create();
+    mat4.perspective(output.PerspMatrix, degToRad(output.Fovy), output.Aspect, 
                      output.ClipRange[0], output.ClipRange[1]);
   } else {
-    alert("Unrecognized DataProject camera type");
+    console.log("Unrecognized DataProject camera type");
     return;
   }
 
-  // WorldSpaceDepth - optional
-  output.worldSpaceDepth = false;
-  i = skipCommentAndEmptyLines(arrayOfLines, i);
-  var line = arrayOfLines[i].trim();
-  if (line == "WorldSpaceDepth") {
-    output.worldSpaceDepth = true;
+  // ImageWarp - optional
+  parts = arrayOfLines[i].trim().split(' ');
+  if (parts[0] == "ImageWarp") {
+    if(parts.length != 19) {
+      console.log("Unrecognized ImageWarp tag");
+      return;
+    }
+    output.ImageWarp = {
+      aspect: parseFloat(parts[2]),
+      k1: parseFloat(parts[4]),
+      k2: parseFloat(parts[6]),
+      k3: parseFloat(parts[8]),
+      p1: parseFloat(parts[10]),
+      p2: parseFloat(parts[12]),
+      centerX: parseFloat(parts[14]),
+      centerY: parseFloat(parts[16]),
+      focal: parseFloat(parts[18])
+    };
+    ++i;
+    parts = arrayOfLines[i].trim().split(' '); // Re-split for ZDataRange
+  }
+
+  // ZDataRange - mandatory
+  if (parts[0] == "ZDataRange") {
+    if(parts.length != 3) {
+      console.log("Unrecognized ZDataRange tag");
+      return;
+    }
+    output.ZDataRange = [parseFloat(parts[1]), parseFloat(parts[2])];
     ++i;
   }
 
-  // ZDataRange
-  parts = arrayOfLines[i].trim().split(' ');
-  if (parts[0] != "ZDataRange") {
-    alert("Unrecognized ZDataRange tag");
-    return;
+  // WorldSpaceDepth - optional
+  output.WorldSpaceDepth = false;  
+  i = skipCommentAndEmptyLines(arrayOfLines, i);
+  if(i < arrayOfLines.length) {
+    var line = arrayOfLines[i].trim();
+    if (line == "WorldSpaceDepth") {
+      output.WorldSpaceDepth = true;
+      ++i;
+    }
   }
-  output.ZDataRange = [parseFloat(parts[1]), parseFloat(parts[2])];
 
   return output;
 }
