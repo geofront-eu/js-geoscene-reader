@@ -4,7 +4,7 @@
  * Reads a GeoScene text file on the local webserver via AJAX
  * @param {filePath} The local or relative path to the text file to be read
  * @param {callback} A callback function which accepts a GeoScene output object as input parameter
- *                   (see below for more information)
+ *                   (see parseGeoSceneContent() for more information)
  * @return {void}
  *
  * Example usage:
@@ -14,11 +14,6 @@
  *     };
  *     var res = readGeoSceneFile("myscene.geoscene", callback);
  *
- * A GeoScene output object is similar to the following
- *
- *   geoSceneObject = {
- *   
- *   }
  */
 function readGeoSceneFile(filePath, callback) {
   var rawFile = new XMLHttpRequest();  
@@ -28,12 +23,176 @@ function readGeoSceneFile(filePath, callback) {
     if(rawFile.readyState === 4) {
       if(rawFile.status === 200 || rawFile.status == 0) {
         var content = rawFile.responseText;
-        var geoCastObj = parseGeoCastContent(content);
+        var geoCastObj = parseGeoSceneContent(content);
         callback(geoCastObj);
       }
     }
   }
   rawFile.send();
+}
+
+// [utility function] Skip comment and empty lines
+function skipCommentAndEmptyLines(arrayOfLines, index) {
+  if(index >= arrayOfLines.length)
+    return index; // No-op
+  var patt = /^\s*#.*|^\s*$/g;    
+  while(patt.test(arrayOfLines[index]))
+    ++index;
+  return index;
+};
+
+/**
+ * Reads a GeoScene text file on the local webserver via AJAX and returns a GeoScene object
+ * similar to the following
+ *
+ *   geoSceneObject = {
+ *     version = "2.0";
+ *     sequence = [0, 0];
+ *     dataformat = "PNG";
+ *     geoCastSequence = [
+ *       {
+ *         name = "Field0";
+ *         size = [1400, 900];
+ *         image = "../image.png";
+ *         geocast = "../geocast_file.geocast";
+ *       }, ...
+ *     ]
+ *     geoCastZSequence = [
+ *       {
+ *         name = "WorldFloor";
+ *         size = [1400, 900];
+ *         image = "../image.png";
+ *         geocast = "../geocast_file.geocast";
+ *       }, ...
+ *     ]
+ *     matchGroupSequence = [
+ *       {
+ *         index = 0;
+ *         matchCamSequence = [
+ *           "Field0", ...
+ *         ]
+ *         matchSurfaceSequence = [
+ *           "WorldFloor", ...
+ *         ]
+ *       }, ...
+ *     ]
+ *   }
+ *
+ * @param {content} The string content of the GeoScene file
+ * @return {object} The GeoScene object
+ */
+function parseGeoSceneContent(content) {
+  var output = {};
+  var arrayOfLines = content.split("\n");
+  var i = 0;
+
+  // Check signature
+  i = skipCommentAndEmptyLines(arrayOfLines, i);
+  var patt = /GeoScene V(\d+\.\d+)/g;
+  var res = patt.exec(arrayOfLines[i++].trim());
+  if (!res) {
+    alert("Not a GeoScene file");
+    return;
+  }
+  output.version = res[1];
+
+  // Sequence
+  i = skipCommentAndEmptyLines(arrayOfLines, i);
+  var parts = arrayOfLines[i++].trim().split(' ');
+  if (parts[0] != "Sequence") {
+    alert("Unrecognized sequence marker");
+    return;
+  }
+  output.sequence = [parseFloat(parts[1]), parseFloat(parts[2])];
+
+  // DataFormat
+  i = skipCommentAndEmptyLines(arrayOfLines, i);
+  parts = arrayOfLines[i++].trim().split(' ');
+  if (parts[0] != "DataFormat") {
+    alert("Unrecognized dataformat marker");
+    return;
+  }
+  output.dataformat = parts[1];
+
+  // GeoCast sequence
+  output.geoCastSequence = [];
+  do {
+    i = skipCommentAndEmptyLines(arrayOfLines, i);
+    if(i >= arrayOfLines.length)
+      break;
+    parts = arrayOfLines[i++].trim().split(' ');
+    if (parts[0] != "GeoCast" || parts.length < 6) {
+      --i;
+      break;
+    }
+    var geocastSequenceObj = {};
+    geocastSequenceObj.name = parts[1];
+    geocastSequenceObj.size = [parseFloat(parts[2]), parseFloat(parts[3])];
+    geocastSequenceObj.image = parts[4];
+    geocastSequenceObj.geocast = parts[5];
+    output.geoCastSequence.push(geocastSequenceObj);
+  } while(true);
+
+  // GeoCastZ sequence
+  output.geoCastZSequence = [];
+  do {
+    i = skipCommentAndEmptyLines(arrayOfLines, i);
+    if(i >= arrayOfLines.length)
+      break;
+    parts = arrayOfLines[i++].trim().split(' ');
+    if (parts[0] != "GeoCastZ" || parts.length < 6) {
+      --i;
+      break;
+    }
+    var geoCastZSequenceObj = {};
+    geoCastZSequenceObj.name = parts[1];
+    geoCastZSequenceObj.size = [parseFloat(parts[2]), parseFloat(parts[3])];
+    geoCastZSequenceObj.image = parts[4];
+    geoCastZSequenceObj.geocast = parts[5];
+    output.geoCastZSequence.push(geoCastZSequenceObj);
+  } while(true);
+
+  // Match groups sequence
+  output.matchGroupSequence = [];
+  do {
+    i = skipCommentAndEmptyLines(arrayOfLines, i);
+    if(i >= arrayOfLines.length)
+      break;
+    parts = arrayOfLines[i++].trim().split(' ');
+    if (parts[0] != "MatchGroup" || parts.length != 2) {
+      --i;
+      break;
+    }
+    var matchGroupSequenceObj = {};
+    matchGroupSequenceObj.index = parts[1];
+    matchGroupSequenceObj.matchCamSequence = [];
+    do {      
+      i = skipCommentAndEmptyLines(arrayOfLines, i);
+      if(i >= arrayOfLines.length)
+        break;
+      parts = arrayOfLines[i++].trim().split(' ');
+      if (parts[0] != "MatchCam" || parts.length != 2) {
+        --i;
+        break;
+      }
+      matchGroupSequenceObj.matchCamSequence.push(parts[1]);
+    } while(true);
+    matchGroupSequenceObj.matchSurfaceSequence = [];
+    do {      
+      i = skipCommentAndEmptyLines(arrayOfLines, i);
+      if(i >= arrayOfLines.length)
+        break;
+      parts = arrayOfLines[i++].trim().split(' ');
+      if (parts[0] != "MatchSurface" || parts.length != 2) {
+        --i;
+        break;
+      }
+      matchGroupSequenceObj.matchSurfaceSequence.push(parts[1]);
+    } while(true);
+    output.matchGroupSequence.push(matchGroupSequenceObj);
+  } while(true);
+
+  return output;  
 }
 
 /**
@@ -103,15 +262,8 @@ function parseGeoCastContent(content) {
   var arrayOfLines = content.split("\n");
   var i = 0;
 
-  var skipCommentLines = function(index) {
-    var patt = /^\s*#.*/g;    
-    while(patt.test(arrayOfLines[index]))
-      ++index;
-    return index;
-  };
-
   // Check signature
-  i = skipCommentLines(i);
+  i = skipCommentAndEmptyLines(arrayOfLines, i);
   var patt = /GeoCast V(\d+\.\d+)/g;
   var res = patt.exec(arrayOfLines[i++].trim());
   if (!res) {
@@ -128,7 +280,7 @@ function parseGeoCastContent(content) {
   output.cameraType = cameraType;
 
   // Pos
-  i = skipCommentLines(i);
+  i = skipCommentAndEmptyLines(arrayOfLines, i);
   var parts = arrayOfLines[i++].trim().split(' ');
   if (parts[0] != "Pos") {
     alert("Unrecognized camera position");
@@ -141,7 +293,7 @@ function parseGeoCastContent(content) {
   output.cameraPosition = cameraPosition;
 
   // ViewSlice
-  i = skipCommentLines(i);
+  i = skipCommentAndEmptyLines(arrayOfLines, i);
   parts = arrayOfLines[i++].trim().split(' ');
   if (parts[0] != "ViewSlice") {
     alert("Unrecognized ViewSlice tag");
@@ -151,7 +303,7 @@ function parseGeoCastContent(content) {
   output.viewSlice_Size = parseFloat(parts[4]);
 
   // ModelviewMatrix
-  i = skipCommentLines(i);
+  i = skipCommentAndEmptyLines(arrayOfLines, i);
   if (arrayOfLines[i++].trim() != "ModelviewMatrix") {
     alert("Unrecognized MVM type");
     return;
@@ -169,7 +321,7 @@ function parseGeoCastContent(content) {
   }
 
   // DataProject
-  i = skipCommentLines(i);
+  i = skipCommentAndEmptyLines(arrayOfLines, i);
   parts = arrayOfLines[i++].trim().split(' ');
   if (parts[0] != "DataProject") {
     alert("Unrecognized DataProject tag");
@@ -218,7 +370,7 @@ function parseGeoCastContent(content) {
 
   // WorldSpaceDepth - optional
   output.worldSpaceDepth = false;
-  i = skipCommentLines(i);
+  i = skipCommentAndEmptyLines(arrayOfLines, i);
   var line = arrayOfLines[i].trim();
   if (line == "WorldSpaceDepth") {
     output.worldSpaceDepth = true;
