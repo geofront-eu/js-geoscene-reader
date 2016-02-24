@@ -257,8 +257,10 @@ function readGeoCastFile(filePath, callback) {
  *    Version = "1.5";
  *    CameraType = "DynamicCamera";
  *    CameraPosition = [1.2, 3.4, 0.22];
- *    ViewSlice_FODAngle = 145.0;
- *    ViewSlice_Size = 100.0;
+ *    ViewSlice = {
+ *      FODAngle = 145.0;
+ *      Size = 100.0;
+ *    };
  *    // Row-major
  *    ModelviewMatrix; // mat4 object
  *    ------ varying part -------
@@ -274,8 +276,8 @@ function readGeoCastFile(filePath, callback) {
  *    PerspMatrix; // mat4 object
  *    --- end of varying part ---
  *    ZDataRange = [0.0, 100.0];
- *    *optional* WorldSpaceDepth = true;
- *    *optional* ImageWarp = {
+ *    WorldSpaceDepth = true;
+ *    ImageWarp = {
  *      aspect = 0.2;
  *      k1 = 0.2;
  *      k2 = 0.2;
@@ -302,148 +304,103 @@ function parseGeoCastContent(content) {
   var patt = /GeoCast V(\d+\.\d+)/g;
   var res = patt.exec(arrayOfLines[i++].trim());
   if (!res) {
-    console.log("Not a GeoCast file");
+    console.log("Not a recognized GeoCast file");
     return;
   }
   output.Version = res[1];
 
-  var cameraType = arrayOfLines[i++].trim();
-  if (cameraType != "DynamicCamera" && cameraType != "StaticCamera") {
-    console.log("Unrecognized camera type");
-    return;
-  }
-  output.CameraType = cameraType;
+  while (i < arrayOfLines.length) {
 
-  // Pos
-  i = skipCommentAndEmptyLines(arrayOfLines, i);
-  var parts = arrayOfLines[i++].trim().split(' ');
-  if (parts[0] != "Pos") {
-    console.log("Unrecognized camera position");
-    return;
-  }
-  var cameraPosition = [];
-  cameraPosition.push(parseFloat(parts[1]));
-  cameraPosition.push(parseFloat(parts[2]));
-  cameraPosition.push(parseFloat(parts[3]));
-  output.CameraPosition = cameraPosition;
+    i = skipCommentAndEmptyLines(arrayOfLines, i);
+    if (i >= arrayOfLines.length)
+      break;
+    var parts = arrayOfLines[i].trim().split(' ');
 
-  // ViewSlice
-  i = skipCommentAndEmptyLines(arrayOfLines, i);
-  parts = arrayOfLines[i++].trim().split(' ');
-  if (parts[0] != "ViewSlice") {
-    console.log("Unrecognized ViewSlice tag");
-    return;
-  }
-  output.ViewSlice_FODAngle = parseFloat(parts[2]);
-  output.ViewSlice_Size = parseFloat(parts[4]);
-
-  // ModelviewMatrix
-  i = skipCommentAndEmptyLines(arrayOfLines, i);
-  if (arrayOfLines[i++].trim() != "ModelviewMatrix") {
-    console.log("Unrecognized MVM type");
-    return;
-  }
-  output.ModelviewMatrix = mat4.create();
-  var readMatrixRow = function(line, index) {
-    parts = line.trim().split(' ');
-    output.ModelviewMatrix[4 * index + 0] = parseFloat(parts[0]);
-    output.ModelviewMatrix[4 * index + 1] = parseFloat(parts[1]);
-    output.ModelviewMatrix[4 * index + 2] = parseFloat(parts[2]);
-    output.ModelviewMatrix[4 * index + 3] = parseFloat(parts[3]);
-  };
-  for (var j = 0; j < 4; j++) {
-    readMatrixRow(arrayOfLines[i++], j);
-  }
-
-  // DataProject
-  i = skipCommentAndEmptyLines(arrayOfLines, i);
-  parts = arrayOfLines[i++].trim().split(' ');
-  if (parts[0] != "DataProject") {
-    console.log("Unrecognized DataProject tag");
-    return;
-  }
-  output.DataProject = parts[1];
-  if (output.DataProject == "Ortho") { // Orthographic view
-    if (parts[2] != "Window") {
-      console.log("Unrecognized Window tag");
-      return;
-    }
-    output.WindowSize = [parseFloat(parts[3]), parseFloat(parts[4])];
-    if (parts[5] != "ProjRange") {
-      console.log("Unrecognized ProjRange tag");
-      return;
-    }
-    output.ProjRange = [parseFloat(parts[6]), parseFloat(parts[7])];
-    output.OrthoMatrix = mat4.create();
-    mat4.ortho(output.OrthoMatrix,
-        -output.WindowSize[0], output.WindowSize[0], 
-        -output.WindowSize[1], output.WindowSize[1],
-        output.ProjRange[0], output.ProjRange[1]);
-  } else if (output.DataProject == "Perspective") { // Perspective view
-    if (parts[2] != "Fovy") {
-      console.log("Unrecognized Fovy tag");
-      return;
-    }
-    output.Fovy = parseFloat(parts[3]);
-    if (parts[4] != "Aspect") {
-      console.log("Unrecognized Aspect tag");
-      return;
-    }
-    output.Aspect = parseFloat(parts[5]);
-    if (parts[6] != "ClipRange") {
-      console.log("Unrecognized ClipRange tag");
-      return;
-    }    
-    output.ClipRange = [parseFloat(parts[7]), parseFloat(parts[8])];
-    output.PerspMatrix = mat4.create();
-    mat4.perspective(output.PerspMatrix, degToRad(output.Fovy), output.Aspect, 
-                     output.ClipRange[0], output.ClipRange[1]);
-  } else {
-    console.log("Unrecognized DataProject camera type");
-    return;
-  }
-
-  // ImageWarp - optional
-  parts = arrayOfLines[i].trim().split(' ');
-  if (parts[0] == "ImageWarp") {
-    if(parts.length != 19) {
-      console.log("Unrecognized ImageWarp tag");
-      return;
-    }
-    output.ImageWarp = {
-      aspect: parseFloat(parts[2]),
-      k1: parseFloat(parts[4]),
-      k2: parseFloat(parts[6]),
-      k3: parseFloat(parts[8]),
-      p1: parseFloat(parts[10]),
-      p2: parseFloat(parts[12]),
-      centerX: parseFloat(parts[14]),
-      centerY: parseFloat(parts[16]),
-      focal: parseFloat(parts[18])
-    };
-    ++i;
-    parts = arrayOfLines[i].trim().split(' '); // Re-split for ZDataRange
-  }
-
-  // ZDataRange - mandatory
-  if (parts[0] == "ZDataRange") {
-    if(parts.length != 3) {
-      console.log("Unrecognized ZDataRange tag");
-      return;
-    }
-    output.ZDataRange = [parseFloat(parts[1]), parseFloat(parts[2])];
-    ++i;
-  }
-
-  // WorldSpaceDepth - optional
-  output.WorldSpaceDepth = false;  
-  i = skipCommentAndEmptyLines(arrayOfLines, i);
-  if(i < arrayOfLines.length) {
-    var line = arrayOfLines[i].trim();
-    if (line == "WorldSpaceDepth") {
+    if (parts[0] == "DynamicCamera" || parts[0] == "StaticCamera")
+      output.CameraType = parts[0];
+    else if (parts[0] == "Pos") {
+      var cameraPosition = [];
+      cameraPosition.push(parseFloat(parts[1]));
+      cameraPosition.push(parseFloat(parts[2]));
+      cameraPosition.push(parseFloat(parts[3]));
+      output.CameraPosition = cameraPosition;
+    } else if (parts[0] == "ViewSlice") {
+      output.ViewSlice = {
+        FODAngle: parseFloat(parts[2]),
+        Size: parseFloat(parts[4])
+      };
+    } else if (parts[0] == "ModelviewMatrix") {
+      output.ModelviewMatrix = mat4.create();
+      var readMatrixRow = function(line, index) {
+        parts = line.trim().split(' ');
+        output.ModelviewMatrix[4 * index + 0] = parseFloat(parts[0]);
+        output.ModelviewMatrix[4 * index + 1] = parseFloat(parts[1]);
+        output.ModelviewMatrix[4 * index + 2] = parseFloat(parts[2]);
+        output.ModelviewMatrix[4 * index + 3] = parseFloat(parts[3]);
+      };
+      for (var j = 0; j < 4; j++) {
+        readMatrixRow(arrayOfLines[++i], j);
+      }
+    } else if (parts[0] == "DataProject") {
+      output.DataProject = parts[1];
+      if (output.DataProject == "Ortho") { // Orthographic view
+        if (parts[2] != "Window") {
+          console.log("Unrecognized Window tag");
+          return;
+        }
+        output.WindowSize = [parseFloat(parts[3]), parseFloat(parts[4])];
+        if (parts[5] != "ProjRange") {
+          console.log("Unrecognized ProjRange tag");
+          return;
+        }
+        output.ProjRange = [parseFloat(parts[6]), parseFloat(parts[7])];
+        output.OrthoMatrix = mat4.create();
+        mat4.ortho(output.OrthoMatrix,
+            -output.WindowSize[0], output.WindowSize[0], 
+            -output.WindowSize[1], output.WindowSize[1],
+            output.ProjRange[0], output.ProjRange[1]);
+      } else if (output.DataProject == "Perspective") { // Perspective view
+        if (parts[2] != "Fovy") {
+          console.log("Unrecognized Fovy tag");
+          return;
+        }
+        output.Fovy = parseFloat(parts[3]);
+        if (parts[4] != "Aspect") {
+          console.log("Unrecognized Aspect tag");
+          return;
+        }
+        output.Aspect = parseFloat(parts[5]);
+        if (parts[6] != "ClipRange") {
+          console.log("Unrecognized ClipRange tag");
+          return;
+        }    
+        output.ClipRange = [parseFloat(parts[7]), parseFloat(parts[8])];
+        output.PerspMatrix = mat4.create();
+        mat4.perspective(output.PerspMatrix, degToRad(output.Fovy), output.Aspect, 
+                         output.ClipRange[0], output.ClipRange[1]);
+      } else {
+        console.log("Unrecognized DataProject camera type");
+      }
+    } else if (parts[0] == "ImageWarp") {
+      output.ImageWarp = {
+        aspect: parseFloat(parts[2]),
+        k1: parseFloat(parts[4]),
+        k2: parseFloat(parts[6]),
+        k3: parseFloat(parts[8]),
+        p1: parseFloat(parts[10]),
+        p2: parseFloat(parts[12]),
+        centerX: parseFloat(parts[14]),
+        centerY: parseFloat(parts[16]),
+        focal: parseFloat(parts[18])
+      };
+    } else if (parts[0] == "ZDataRange") {
+      output.ZDataRange = [parseFloat(parts[1]), parseFloat(parts[2])];
+    } else if (parts[0] == "WorldSpaceDepth") {
       output.WorldSpaceDepth = true;
-      ++i;
-    }
+    } else
+      console.log("Unrecognized line: '" + arrayOfLines[i] + "'");
+
+    ++i;
   }
 
   return output;
