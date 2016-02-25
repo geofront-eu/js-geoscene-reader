@@ -37,7 +37,7 @@ function readGeoSceneFile(filePath, callback) {
 function skipCommentAndEmptyLines(arrayOfLines, index) {
   if(index >= arrayOfLines.length)
     return index; // No-op
-  var patt = /^\s*#.*|^\s*$/g;    
+  var patt = /^\s*\#|^\s*$/;    
   while(patt.test(arrayOfLines[index]))
     ++index;
   return index;
@@ -344,7 +344,7 @@ function parseGeoCastContent(content) {
     } else if (parts[0] == "DataProject") {
       output.DataProject = parts[1];
       if (output.DataProject == "Ortho") { // Orthographic view
-        if (parts[2] != "Window") {
+        if (parts[2] != "WindowSize" && parts[2] != "Window") {
           console.log("Unrecognized Window tag");
           return;
         }
