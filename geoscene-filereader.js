@@ -35,11 +35,26 @@ function readGeoSceneFile(filePath, callback) {
 
 // <[utility functions]>
 function skipCommentAndEmptyLines(arrayOfLines, index) {
-  if(index >= arrayOfLines.length)
-    return index; // No-op
-  var patt = /^\s*\#|^\s*$/;    
-  while(patt.test(arrayOfLines[index]))
-    ++index;
+  while(index < arrayOfLines.length) {
+    var skipThisLine = true;
+    for (var i = 0; i < arrayOfLines[index].length; ++i) {
+      if (arrayOfLines[index][i] == '\r' || arrayOfLines[index][i] == '\n' ||
+          arrayOfLines[index][i] == ' ') {
+        // Continue skipping
+        skipThisLine = true;
+      } else if (arrayOfLines[index][i] == '#') {
+        skipThisLine = true;
+        break; // Comment line
+      } else {
+        skipThisLine = false;
+        break; // Something found - parse it
+      }
+    }
+    if (skipThisLine == true)
+      ++index; // Continue with the next one
+    else
+      break; // Found a line which needs parsing
+  }
   return index;
 };
 function degToRad(degrees) {
@@ -97,125 +112,86 @@ function parseGeoSceneContent(content, basepath) {
 
   // Check signature
   i = skipCommentAndEmptyLines(arrayOfLines, i);
+  if (i >= arrayOfLines.length) {
+    console.log("Corrupted GeoScene file");
+    return;
+  }
   var patt = /GeoScene V(\d+\.\d+)/g;
-  var res = patt.exec(arrayOfLines[i++].trim());
+  var res = patt.exec(arrayOfLines[i].trim());
   if (!res) {
     console.log("Not a GeoScene file");
     return;
   }
   output.version = res[1];
+  ++i;
 
-  // Sequence
-  i = skipCommentAndEmptyLines(arrayOfLines, i);
-  var parts = arrayOfLines[i++].trim().split(' ');
-  if (parts[0] != "Sequence") {
-    console.log("Unrecognized sequence marker");
-    return;
-  }
-  output.sequence = [parseFloat(parts[1]), parseFloat(parts[2])];
-
-  // DataFormat
-  i = skipCommentAndEmptyLines(arrayOfLines, i);
-  parts = arrayOfLines[i++].trim().split(' ');
-  if (parts[0] != "DataFormat") {
-    console.log("Unrecognized dataformat marker");
-    return;
-  }
-  output.dataformat = parts[1];
-
-  // GeoCast sequence
   output.geoCastSequence = [];
-  var objIndex = 0;
-  do {
-    i = skipCommentAndEmptyLines(arrayOfLines, i);
-    if(i >= arrayOfLines.length)
-      break;
-    parts = arrayOfLines[i++].trim().split(' ');
-    if (parts[0] != "GeoCast" || parts.length < 6) {
-      --i;
-      break;
-    }
-    var geocastSequenceObj = {};
-    geocastSequenceObj.name = parts[1];
-    geocastSequenceObj.size = [parseFloat(parts[2]), parseFloat(parts[3])];
-    geocastSequenceObj.image = basepath + '/' + parts[4];    
-    output.geoCastSequence.push(geocastSequenceObj);
-    var geocastLoadedCallback = (function(j) {
-      var index = j; // Closure capture
-      return function(geocastObject) {
-        output.geoCastSequence[index].geocast = geocastObject;
-      };
-    })(objIndex);
-    readGeoCastFile(basepath + '/' + parts[5], geocastLoadedCallback);
-    ++objIndex;
-  } while(true);
-
-  // GeoCastZ sequence
   output.geoCastZSequence = [];
-  objIndex = 0;
-  do {
-    i = skipCommentAndEmptyLines(arrayOfLines, i);
-    if(i >= arrayOfLines.length)
-      break;
-    parts = arrayOfLines[i++].trim().split(' ');
-    if (parts[0] != "GeoCastZ" || parts.length < 6) {
-      --i;
-      break;
-    }
-    var geoCastZSequenceObj = {};
-    geoCastZSequenceObj.name = parts[1];
-    geoCastZSequenceObj.size = [parseFloat(parts[2]), parseFloat(parts[3])];
-    geoCastZSequenceObj.image = basepath + '/' + parts[4];
-    output.geoCastZSequence.push(geoCastZSequenceObj);
-    var geocastLoadedCallback = (function(j) {
-      var index = j; // Closure capture
-      return function(geocastObject) {
-        output.geoCastZSequence[index].geocast = geocastObject;
-      };
-    })(objIndex);
-    readGeoCastFile(basepath + '/' + parts[5], geocastLoadedCallback);
-    ++objIndex;
-  } while(true);
-
-  // Match groups sequence
   output.matchGroupSequence = [];
-  do {
+
+  while (i < arrayOfLines.length) {
+
     i = skipCommentAndEmptyLines(arrayOfLines, i);
-    if(i >= arrayOfLines.length)
+    if (i >= arrayOfLines.length)
       break;
-    parts = arrayOfLines[i++].trim().split(' ');
-    if (parts[0] != "MatchGroup" || parts.length != 2) {
-      --i;
-      break;
+    var parts = arrayOfLines[i].trim().split(' ');
+
+    if (parts[0] == "Sequence") {
+      output.sequence = [parseFloat(parts[1]), parseFloat(parts[2])];
+    } else if (parts[0] == "DataFormat") {
+      output.dataformat = parts[1];
+    } else if (parts[0] == "GeoCast") {
+      var geocastSequenceObj = {};
+      geocastSequenceObj.name = parts[1];
+      geocastSequenceObj.size = [parseFloat(parts[2]), parseFloat(parts[3])];
+      geocastSequenceObj.image = basepath + '/' + parts[4];    
+      output.geoCastSequence.push(geocastSequenceObj);
+      var geocastLoadedCallback = (function(j) {
+        var index = j; // Closure capture
+        return function(geocastObject) {
+          output.geoCastSequence[index].geocast = geocastObject;
+        };
+      })(output.geoCastSequence.length - 1);
+      readGeoCastFile(basepath + '/' + parts[5], geocastLoadedCallback);
+    } else if (parts[0] == "GeoCastZ") {
+      var geoCastZSequenceObj = {};
+      geoCastZSequenceObj.name = parts[1];
+      geoCastZSequenceObj.size = [parseFloat(parts[2]), parseFloat(parts[3])];
+      geoCastZSequenceObj.image = basepath + '/' + parts[4];
+      output.geoCastZSequence.push(geoCastZSequenceObj);
+      var geocastLoadedCallback = (function(j) {
+        var index = j; // Closure capture
+        return function(geocastObject) {
+          output.geoCastZSequence[index].geocast = geocastObject;
+        };
+      })(output.geoCastZSequence.length - 1);
+      readGeoCastFile(basepath + '/' + parts[5], geocastLoadedCallback);
+    } else if (parts[0] == "MatchGroup") {
+      var matchGroupSequenceObj = {};
+      matchGroupSequenceObj.index = parts[1];
+      matchGroupSequenceObj.matchCamSequence = [];
+      matchGroupSequenceObj.matchSurfaceSequence = [];
+      ++i;
+      while (true) {
+        i = skipCommentAndEmptyLines(arrayOfLines, i);
+        if(i >= arrayOfLines.length)
+          break;
+        parts = arrayOfLines[i].trim().split(' ');
+        if (parts[0] == "MatchCam") {
+          matchGroupSequenceObj.matchCamSequence.push(parts[1]);
+        } else if (parts[0] == "MatchSurface") {
+          matchGroupSequenceObj.matchSurfaceSequence.push(parts[1]);
+        } else {
+          --i;   // Avoids considering this line 'parsed' for the next iteration
+          break; // Not MatchCam or MatchSurface
+        }
+        ++i;
+      }
+      output.matchGroupSequence.push(matchGroupSequenceObj);
     }
-    var matchGroupSequenceObj = {};
-    matchGroupSequenceObj.index = parts[1];
-    matchGroupSequenceObj.matchCamSequence = [];
-    do {      
-      i = skipCommentAndEmptyLines(arrayOfLines, i);
-      if(i >= arrayOfLines.length)
-        break;
-      parts = arrayOfLines[i++].trim().split(' ');
-      if (parts[0] != "MatchCam" || parts.length != 2) {
-        --i;
-        break;
-      }
-      matchGroupSequenceObj.matchCamSequence.push(parts[1]);
-    } while(true);
-    matchGroupSequenceObj.matchSurfaceSequence = [];
-    do {      
-      i = skipCommentAndEmptyLines(arrayOfLines, i);
-      if(i >= arrayOfLines.length)
-        break;
-      parts = arrayOfLines[i++].trim().split(' ');
-      if (parts[0] != "MatchSurface" || parts.length != 2) {
-        --i;
-        break;
-      }
-      matchGroupSequenceObj.matchSurfaceSequence.push(parts[1]);
-    } while(true);
-    output.matchGroupSequence.push(matchGroupSequenceObj);
-  } while(true);
+  
+    ++i;
+  }
 
   return output;  
 }
