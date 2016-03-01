@@ -63,6 +63,44 @@ function degToRad(degrees) {
 function radToDeg(radians) {
   return radians / Math.PI * 180;
 }
+function padWithZeros(num, size) {
+  var s = num + "";
+  while (s.length < size) 
+    s = "0" + s;
+  return s;
+}
+function readSequenceAsArray(path, sequence) { // Reads an array from a printf-like format string
+  var pat1 = /%(\d+)d/g;
+  var pat2 = /%d/g;
+  var patternWithDigits = pat1.test(path);
+  var patternWithoutDigits = pat2.test(path);
+  if (patternWithDigits == false && patternWithoutDigits == false)
+    return [path];
+  else {
+    var ret = [];
+    if (patternWithoutDigits == true) {
+      for (var i = sequence[0]; i <= sequence[1]; ++i) {
+        var res = path.replace(pat2, i);
+        ret.push(res);
+      }
+    } else { // Also handles variable sequences, e.g. "file%05d/folder%02d/"
+      for (var i = sequence[0]; i <= sequence[1]; ++i)
+        ret.push(path);
+      pat1.lastIndex = 0; // Resets to the first found one
+      var pat_no_g = new RegExp(pat1.source, "");
+      var localres;
+      while(true) {
+        localres = pat1.exec(path);
+        if (localres == null)
+          break;
+        var digits = parseInt(localres[1]);
+        for (var i = sequence[0]; i <= sequence[1]; ++i)
+          ret[i - sequence[0]] = ret[i - sequence[0]].replace(pat_no_g, padWithZeros(i, digits));
+      }
+    }
+    return ret;
+  }
+}
 
 /**
  * Reads a GeoScene text file on the local webserver via AJAX and returns a GeoScene object
@@ -76,16 +114,16 @@ function radToDeg(radians) {
  *       {
  *         name = "Field0";
  *         size = [1400, 900];
- *         image = "../image.png";
- *         geocast = [geocastObject - see see parseGeoCastContent()];
+ *         image = ["../image.png"]; // Array whose length depends on the geoScene sequence
+ *         geocast = [geocastObject - see see parseGeoCastContent()]; // Ditto as above
  *       }, ...
  *     ]
  *     geoCastZSequence = [
  *       {
  *         name = "WorldFloor";
  *         size = [1400, 900];
- *         image = "../image.png";
- *         geocast = [geocastObject - see see parseGeoCastContent()];
+ *         image = "../image.png"; // Array whose length depends on the geoScene sequence
+ *         geocast = [geocastObject - see see parseGeoCastContent()]; // Ditto as above
  *       }, ...
  *     ]
  *     matchGroupSequence = [
@@ -144,28 +182,36 @@ function parseGeoSceneContent(content, basepath) {
       var geocastSequenceObj = {};
       geocastSequenceObj.name = parts[1];
       geocastSequenceObj.size = [parseFloat(parts[2]), parseFloat(parts[3])];
-      geocastSequenceObj.image = basepath + '/' + parts[4];    
+      geocastSequenceObj.image = readSequenceAsArray(basepath + '/' + parts[4], output.sequence);
+      geocastSequenceObj.geocast = [];
       output.geoCastSequence.push(geocastSequenceObj);
       var geocastLoadedCallback = (function(j) {
         var index = j; // Closure capture
         return function(geocastObject) {
-          output.geoCastSequence[index].geocast = geocastObject;
+          output.geoCastSequence[index].geocast.push(geocastObject);
         };
       })(output.geoCastSequence.length - 1);
-      readGeoCastFile(basepath + '/' + parts[5], geocastLoadedCallback);
+      var arr = readSequenceAsArray(basepath + '/' + parts[5], output.sequence);
+      for (var k = 0; k < arr.length; ++k) {
+        readGeoCastFile(arr[k], geocastLoadedCallback);
+      }      
     } else if (parts[0] == "GeoCastZ") {
       var geoCastZSequenceObj = {};
       geoCastZSequenceObj.name = parts[1];
       geoCastZSequenceObj.size = [parseFloat(parts[2]), parseFloat(parts[3])];
-      geoCastZSequenceObj.image = basepath + '/' + parts[4];
+      geoCastZSequenceObj.image = readSequenceAsArray(basepath + '/' + parts[4], output.sequence);
+      geoCastZSequenceObj.geocast = [];
       output.geoCastZSequence.push(geoCastZSequenceObj);
       var geocastLoadedCallback = (function(j) {
         var index = j; // Closure capture
         return function(geocastObject) {
-          output.geoCastZSequence[index].geocast = geocastObject;
+          output.geoCastZSequence[index].geocast.push(geocastObject);
         };
       })(output.geoCastZSequence.length - 1);
-      readGeoCastFile(basepath + '/' + parts[5], geocastLoadedCallback);
+      var arr = readSequenceAsArray(basepath + '/' + parts[5], output.sequence);
+      for (var k = 0; k < arr.length; ++k) {
+        readGeoCastFile(arr[k], geocastLoadedCallback);
+      }
     } else if (parts[0] == "MatchGroup") {
       var matchGroupSequenceObj = {};
       matchGroupSequenceObj.index = parts[1];
