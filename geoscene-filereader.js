@@ -185,16 +185,21 @@ function parseGeoSceneContent(content, basepath) {
       geocastSequenceObj.image = readSequenceAsArray(basepath + '/' + parts[4], output.sequence);
       geocastSequenceObj.geocast = [];
       output.geoCastSequence.push(geocastSequenceObj);
-      var geocastLoadedCallback = (function(j) {
-        var index = j; // Closure capture
-        return function(geocastObject) {
-          output.geoCastSequence[index].geocast.push(geocastObject);
-        };
-      })(output.geoCastSequence.length - 1);
+      var index1 = output.geoCastSequence.length - 1;
       var arr = readSequenceAsArray(basepath + '/' + parts[5], output.sequence);
+      output.geoCastSequence[index1].geocast = [];
       for (var k = 0; k < arr.length; ++k) {
+        output.geoCastSequence[index1].geocast.push({});
+        var index2 = k; // or output.geoCastSequence[index1].geocast.length - 1
+        var geocastLoadedCallback = (function(index1, index2) {
+          var captureIndex1 = index1; // Closure captures
+          var captureIndex2 = index2;
+          return function(geocastObject) {
+            output.geoCastSequence[captureIndex1].geocast[captureIndex2] = geocastObject;
+          };
+        })(index1, index2);
         readGeoCastFile(arr[k], geocastLoadedCallback);
-      }      
+      }
     } else if (parts[0] == "GeoCastZ") {
       var geoCastZSequenceObj = {};
       geoCastZSequenceObj.name = parts[1];
@@ -202,14 +207,19 @@ function parseGeoSceneContent(content, basepath) {
       geoCastZSequenceObj.image = readSequenceAsArray(basepath + '/' + parts[4], output.sequence);
       geoCastZSequenceObj.geocast = [];
       output.geoCastZSequence.push(geoCastZSequenceObj);
-      var geocastLoadedCallback = (function(j) {
-        var index = j; // Closure capture
-        return function(geocastObject) {
-          output.geoCastZSequence[index].geocast.push(geocastObject);
-        };
-      })(output.geoCastZSequence.length - 1);
+      var index1 = output.geoCastZSequence.length - 1;
       var arr = readSequenceAsArray(basepath + '/' + parts[5], output.sequence);
+      output.geoCastZSequence[index1].geocast = [];
       for (var k = 0; k < arr.length; ++k) {
+        output.geoCastZSequence[index1].geocast.push({});
+        var index2 = k; // or output.geoCastZSequence[index1].geocast.length - 1
+        var geocastLoadedCallback = (function(index1, index2) {
+          var captureIndex1 = index1; // Closure captures
+          var captureIndex2 = index2;
+          return function(geocastObject) {
+            output.geoCastZSequence[captureIndex1].geocast[captureIndex2] = geocastObject;
+          };
+        })(index1, index2);
         readGeoCastFile(arr[k], geocastLoadedCallback);
       }
     } else if (parts[0] == "MatchGroup") {
