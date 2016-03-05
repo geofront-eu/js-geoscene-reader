@@ -122,7 +122,7 @@ function readSequenceAsArray(path, sequence) { // Reads an array from a printf-l
  *       {
  *         name = "WorldFloor";
  *         size = [1400, 900];
- *         image = "../image.png"; // Array whose length depends on the geoScene sequence
+ *         image = ["../image.png"]; // Array whose length depends on the geoScene sequence
  *         geocast = [geocastObject - see see parseGeoCastContent()]; // Ditto as above
  *       }, ...
  *     ]
