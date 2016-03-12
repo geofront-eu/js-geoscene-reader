@@ -115,7 +115,7 @@ function readSequenceAsArray(path, sequence) { // Reads an array from a printf-l
  *         name = "Field0";
  *         size = [1400, 900];
  *         image = ["../image.png"]; // Array whose length depends on the geoScene sequence
- *         geocast = [geocastObject - see see parseGeoCastContent()]; // Ditto as above
+ *         geocast = [geocastObject - see parseGeoCastContent()]; // Ditto as above
  *       }, ...
  *     ]
  *     geoCastZSequence = [
@@ -123,7 +123,7 @@ function readSequenceAsArray(path, sequence) { // Reads an array from a printf-l
  *         name = "WorldFloor";
  *         size = [1400, 900];
  *         image = ["../image.png"]; // Array whose length depends on the geoScene sequence
- *         geocast = [geocastObject - see see parseGeoCastContent()]; // Ditto as above
+ *         geocast = [geocastObject - see parseGeoCastContent()]; // Ditto as above
  *       }, ...
  *     ]
  *     matchGroupSequence = [
