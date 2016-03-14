@@ -388,8 +388,8 @@ function parseGeoCastContent(content) {
         output.ProjRange = [parseFloat(parts[6]), parseFloat(parts[7])];
         output.OrthoMatrix = mat4.create();
         mat4.ortho(output.OrthoMatrix,
-            -output.WindowSize[0], output.WindowSize[0], 
-            -output.WindowSize[1], output.WindowSize[1],
+            -output.WindowSize[0] / 2.0, output.WindowSize[0] / 2.0,
+            -output.WindowSize[1] / 2.0, output.WindowSize[1] / 2.0,
             output.ProjRange[0], output.ProjRange[1]);
       } else if (output.DataProject == "Perspective") { // Perspective view
         if (parts[2] != "Fovy") {
